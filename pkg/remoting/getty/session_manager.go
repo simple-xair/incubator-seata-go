@@ -77,7 +77,7 @@ func (g *SessionManager) init() {
 	for _, address := range addressList {
 		gettyClient := getty.NewTCPClient(
 			getty.WithServerAddress(fmt.Sprintf("%s:%d", address.Addr, address.Port)),
-			// todo if read c.gettyConf.ConnectionNum, will cause the connect to fail
+			// todo if read g.config.ConnectionNum, will cause the connect to fail
 			getty.WithConnectionNumber(1),
 			getty.WithReconnectInterval(g.gettyConf.ReconnectInterval),
 			getty.WithClientTaskPool(gxsync.NewTaskPoolSimple(0)),
@@ -157,7 +157,7 @@ func (g *SessionManager) newSession(session getty.Session) error {
 }
 
 func (g *SessionManager) selectSession(msg interface{}) getty.Session {
-	session := loadbalance.Select(config.GetSeataConfig().LoadBalanceType, &g.allSessions, g.getXid(msg))
+	session := loadbalance.Select(loadbalance.GetLoadBalanceConfig().Type, &g.allSessions, g.getXid(msg)).(getty.Session)
 	if session != nil {
 		return session
 	}

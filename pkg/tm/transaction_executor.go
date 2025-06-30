@@ -55,10 +55,10 @@ func WithGlobalTx(ctx context.Context, gc *GtxConfig, business CallbackWithCtx) 
 	}
 
 	if IsGlobalTx(ctx) {
-		clearTxConf(ctx)
+		ClearTxConf(ctx)
 	}
 
-	if re = begin(ctx, gc); re != nil {
+	if re = Begin(ctx, gc); re != nil {
 		return
 	}
 
@@ -68,7 +68,7 @@ func WithGlobalTx(ctx context.Context, gc *GtxConfig, business CallbackWithCtx) 
 		// no need to do second phase if propagation is some type e.g. NotSupported.
 		if IsGlobalTx(ctx) {
 			// business maybe to throw panic, so need to recover it here.
-			if err = commitOrRollback(ctx, deferErr == nil && re == nil); err != nil {
+			if err = CommitOrRollback(ctx, deferErr == nil && re == nil); err != nil {
 				log.Errorf("global transaction xid %s, name %s second phase error", GetXID(ctx), GetTxName(ctx), err)
 			}
 		}
@@ -96,7 +96,7 @@ func WithGlobalTx(ctx context.Context, gc *GtxConfig, business CallbackWithCtx) 
 // but here I do not use this method, instead, simulate the call in rpc mode,
 // construct a new context object and set the xid.
 // the advantage of this is that the suspend and resume operations of xid need not to be considered.
-func begin(ctx context.Context, gc *GtxConfig) error {
+func Begin(ctx context.Context, gc *GtxConfig) error {
 	switch pg := gc.Propagation; pg {
 	case NotSupported:
 		// If transaction is existing, suspend it
@@ -112,7 +112,7 @@ func begin(ctx context.Context, gc *GtxConfig) error {
 		// if transaction is not existing, return then to execute without transaction
 		// else beginNewGtx transaction then return
 		if IsGlobalTx(ctx) {
-			useExistGtx(ctx, gc)
+			UseExistGtx(ctx, gc)
 		}
 		return nil
 	case RequiresNew:
@@ -124,7 +124,7 @@ func begin(ctx context.Context, gc *GtxConfig) error {
 		// default case, If current transaction is existing, execute with current transaction,
 		// else continue and execute with beginNewGtx transaction.
 		if IsGlobalTx(ctx) {
-			useExistGtx(ctx, gc)
+			UseExistGtx(ctx, gc)
 			return nil
 		}
 	case Never:
@@ -138,7 +138,7 @@ func begin(ctx context.Context, gc *GtxConfig) error {
 		// if transaction is not existing, throw exception.
 		// else execute with current transaction.
 		if IsGlobalTx(ctx) {
-			useExistGtx(ctx, gc)
+			UseExistGtx(ctx, gc)
 			return nil
 		}
 		return fmt.Errorf("no existing transaction found for transaction marked with pg 'mandatory'")
@@ -147,11 +147,11 @@ func begin(ctx context.Context, gc *GtxConfig) error {
 	}
 
 	// the follow will to construct a new transaction with xid.
-	return beginNewGtx(ctx, gc)
+	return BeginNewGtx(ctx, gc)
 }
 
-// commitOrRollback commit or rollback the global transaction
-func commitOrRollback(ctx context.Context, isSuccess bool) (re error) {
+// CommitOrRollback commit or rollback the global transaction
+func CommitOrRollback(ctx context.Context, isSuccess bool) (re error) {
 	switch *GetTxRole(ctx) {
 	case Launcher:
 		if tx := GetTx(ctx); isSuccess {
@@ -173,8 +173,8 @@ func commitOrRollback(ctx context.Context, isSuccess bool) (re error) {
 	return
 }
 
-// beginNewGtx to construct a default global transaction
-func beginNewGtx(ctx context.Context, gc *GtxConfig) error {
+// BeginNewGtx to construct a default global transaction
+func BeginNewGtx(ctx context.Context, gc *GtxConfig) error {
 	timeout := gc.Timeout
 	if timeout == 0 {
 		timeout = config.DefaultGlobalTransactionTimeout
@@ -190,8 +190,8 @@ func beginNewGtx(ctx context.Context, gc *GtxConfig) error {
 	return nil
 }
 
-// useExistGtx if xid is not empty, then construct a global transaction
-func useExistGtx(ctx context.Context, gc *GtxConfig) {
+// UseExistGtx if xid is not empty, then construct a global transaction
+func UseExistGtx(ctx context.Context, gc *GtxConfig) {
 	if xid := GetXID(ctx); xid != "" {
 		SetTx(ctx, &GlobalTransaction{
 			Xid:      GetXID(ctx),
@@ -202,7 +202,7 @@ func useExistGtx(ctx context.Context, gc *GtxConfig) {
 	}
 }
 
-// clearTxConf When using global transactions in local mode, you need to clear tx config to use the propagation of global transactions.
-func clearTxConf(ctx context.Context) {
+// ClearTxConf When using global transactions in local mode, you need to clear tx config to use the propagation of global transactions.
+func ClearTxConf(ctx context.Context) {
 	SetTx(ctx, &GlobalTransaction{Xid: GetXID(ctx)})
 }

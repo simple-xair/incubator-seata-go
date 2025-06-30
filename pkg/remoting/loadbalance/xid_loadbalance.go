@@ -21,11 +21,11 @@ import (
 	"strings"
 	"sync"
 
-	getty "github.com/apache/dubbo-getty"
+	"seata.apache.org/seata-go/pkg/protocol/connection"
 )
 
-func XidLoadBalance(sessions *sync.Map, xid string) getty.Session {
-	var session getty.Session
+func XidLoadBalance(sessions *sync.Map, xid string) connection.Connection {
+	var session connection.Connection
 
 	// ip:port:transactionId
 	tmpSplits := strings.Split(xid, ":")
@@ -34,7 +34,7 @@ func XidLoadBalance(sessions *sync.Map, xid string) getty.Session {
 		port := tmpSplits[1]
 		ipPort := ip + ":" + port
 		sessions.Range(func(key, value interface{}) bool {
-			tmpSession := key.(getty.Session)
+			tmpSession := key.(connection.Connection)
 			if tmpSession.IsClosed() {
 				sessions.Delete(tmpSession)
 				return true

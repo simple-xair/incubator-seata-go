@@ -15,10 +15,11 @@
  * limitations under the License.
  */
 
-package tm
+package tm_test
 
 import (
 	"context"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -30,12 +31,20 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"seata.apache.org/seata-go/pkg/protocol/message"
+	"seata.apache.org/seata-go/pkg/tm"
+	"seata.apache.org/seata-go/pkg/tm/transaction/getty"
 )
+
+func TestMain(m *testing.M) {
+	tm.SetGlobalTransactionManager(&getty.GettyGlobalTransactionManager{})
+	code := m.Run()
+	os.Exit(code)
+}
 
 func TestTransactionExecutorBegin(t *testing.T) {
 	type Test struct {
 		ctx                context.Context
-		gc                 *GtxConfig
+		gc                 *tm.GtxConfig
 		xid                string
 		wantHasMock        bool
 		wantMockTargetName string
@@ -49,32 +58,32 @@ func TestTransactionExecutorBegin(t *testing.T) {
 	gts := []Test{
 		{
 			ctx: context.Background(),
-			gc: &GtxConfig{
+			gc: &tm.GtxConfig{
 				Name:        "MockGtxName",
-				Propagation: NotSupported,
+				Propagation: tm.NotSupported,
 			},
 			xid: "123456",
 		},
 		{
 			ctx: context.Background(),
-			gc: &GtxConfig{
+			gc: &tm.GtxConfig{
 				Name:        "MockGtxName",
-				Propagation: Supports,
+				Propagation: tm.Supports,
 			},
 			xid:          "123456",
 			wantUseExist: true,
 		},
 		{
 			ctx: context.Background(),
-			gc: &GtxConfig{
+			gc: &tm.GtxConfig{
 				Name:        "MockGtxName",
-				Propagation: RequiresNew,
+				Propagation: tm.RequiresNew,
 			},
 			xid:                "123456",
 			wantHasMock:        true,
 			wantMockTargetName: "Begin",
-			wantMockFunction: func(_ *GlobalTransactionManager, ctx context.Context, i time.Duration) error {
-				SetXID(ctx, "123456")
+			wantMockFunction: func(_ *getty.GettyGlobalTransactionManager, ctx context.Context, i time.Duration) error {
+				tm.SetXID(ctx, "123456")
 				return nil
 			},
 			wantBeginNew: true,
@@ -82,9 +91,9 @@ func TestTransactionExecutorBegin(t *testing.T) {
 		// use exist
 		{
 			ctx: context.Background(),
-			gc: &GtxConfig{
+			gc: &tm.GtxConfig{
 				Name:        "MockGtxName",
-				Propagation: Required,
+				Propagation: tm.Required,
 			},
 			xid:          "123456",
 			wantUseExist: true,
@@ -92,14 +101,14 @@ func TestTransactionExecutorBegin(t *testing.T) {
 		//Begin new
 		{
 			ctx: context.Background(),
-			gc: &GtxConfig{
+			gc: &tm.GtxConfig{
 				Name:        "MockGtxName",
-				Propagation: Required,
+				Propagation: tm.Required,
 			},
 			wantHasMock:        true,
 			wantMockTargetName: "Begin",
-			wantMockFunction: func(_ *GlobalTransactionManager, ctx context.Context, i time.Duration) error {
-				SetXID(ctx, "123456")
+			wantMockFunction: func(_ *getty.GettyGlobalTransactionManager, ctx context.Context, i time.Duration) error {
+				tm.SetXID(ctx, "123456")
 				return nil
 			},
 			wantBeginNew: true,
@@ -107,9 +116,9 @@ func TestTransactionExecutorBegin(t *testing.T) {
 		// has error
 		{
 			ctx: context.Background(),
-			gc: &GtxConfig{
+			gc: &tm.GtxConfig{
 				Name:        "MockGtxName",
-				Propagation: Never,
+				Propagation: tm.Never,
 			},
 			xid:             "123456",
 			wantHasError:    true,
@@ -118,17 +127,17 @@ func TestTransactionExecutorBegin(t *testing.T) {
 		// has not error
 		{
 			ctx: context.Background(),
-			gc: &GtxConfig{
+			gc: &tm.GtxConfig{
 				Name:        "MockGtxName",
-				Propagation: Never,
+				Propagation: tm.Never,
 			},
 		},
 		// use exist
 		{
 			ctx: context.Background(),
-			gc: &GtxConfig{
+			gc: &tm.GtxConfig{
 				Name:        "MockGtxName",
-				Propagation: Mandatory,
+				Propagation: tm.Mandatory,
 			},
 			xid:          "123456",
 			wantUseExist: true,
@@ -136,9 +145,9 @@ func TestTransactionExecutorBegin(t *testing.T) {
 		// has error
 		{
 			ctx: context.Background(),
-			gc: &GtxConfig{
+			gc: &tm.GtxConfig{
 				Name:        "MockGtxName",
-				Propagation: Mandatory,
+				Propagation: tm.Mandatory,
 			},
 			wantHasError:    true,
 			wantErrorString: "no existing transaction found for transaction marked with pg 'mandatory'",
@@ -146,7 +155,7 @@ func TestTransactionExecutorBegin(t *testing.T) {
 		// default case
 		{
 			ctx: context.Background(),
-			gc: &GtxConfig{
+			gc: &tm.GtxConfig{
 				Name:        "MockGtxName",
 				Propagation: -1,
 			},
@@ -160,14 +169,14 @@ func TestTransactionExecutorBegin(t *testing.T) {
 		var stub *gomonkey.Patches
 		// set up stub
 		if v.wantHasMock {
-			stub = gomonkey.ApplyMethod(reflect.TypeOf(GetGlobalTransactionManager()), v.wantMockTargetName, v.wantMockFunction)
+			stub = gomonkey.ApplyMethod(reflect.TypeOf(tm.GetGlobalTransactionManager()), v.wantMockTargetName, v.wantMockFunction)
 		}
 
-		v.ctx = InitSeataContext(v.ctx)
+		v.ctx = tm.InitSeataContext(v.ctx)
 		if v.xid != "" {
-			SetXID(v.ctx, v.xid)
+			tm.SetXID(v.ctx, v.xid)
 		}
-		err := begin(v.ctx, v.gc)
+		err := tm.Begin(v.ctx, v.gc)
 
 		if v.wantHasError {
 			assert.NotNil(t, err)
@@ -176,11 +185,11 @@ func TestTransactionExecutorBegin(t *testing.T) {
 		}
 
 		if v.wantBeginNew {
-			assert.Equal(t, Launcher, *GetTxRole(v.ctx))
+			assert.Equal(t, tm.Launcher, *tm.GetTxRole(v.ctx))
 		}
 
 		if v.wantUseExist {
-			assert.Equal(t, Participant, *GetTxRole(v.ctx))
+			assert.Equal(t, tm.Participant, *tm.GetTxRole(v.ctx))
 		}
 
 		// rest up stub
@@ -192,27 +201,27 @@ func TestTransactionExecutorBegin(t *testing.T) {
 
 func TestTransactionExecutorCommit(t *testing.T) {
 	ctx := context.Background()
-	ctx = InitSeataContext(ctx)
-	SetTxRole(ctx, Launcher)
-	SetTxStatus(ctx, message.GlobalStatusBegin)
-	SetXID(ctx, "")
-	assert.Equal(t, "Commit xid should not be empty", commitOrRollback(ctx, true).Error())
+	ctx = tm.InitSeataContext(ctx)
+	tm.SetTxRole(ctx, tm.Launcher)
+	tm.SetTxStatus(ctx, message.GlobalStatusBegin)
+	tm.SetXID(ctx, "")
+	assert.Equal(t, "Commit xid should not be empty", tm.CommitOrRollback(ctx, true).Error())
 }
 
 func TestTransactionExecurotRollback(t *testing.T) {
 	ctx := context.Background()
-	ctx = InitSeataContext(ctx)
-	SetTxRole(ctx, Launcher)
-	SetTxStatus(ctx, message.GlobalStatusBegin)
-	SetXID(ctx, "")
-	errActual := commitOrRollback(ctx, false)
+	ctx = tm.InitSeataContext(ctx)
+	tm.SetTxRole(ctx, tm.Launcher)
+	tm.SetTxStatus(ctx, message.GlobalStatusBegin)
+	tm.SetXID(ctx, "")
+	errActual := tm.CommitOrRollback(ctx, false)
 	assert.Equal(t, "Rollback xid should not be empty", errActual.Error())
 }
 
 func TestCommitOrRollback(t *testing.T) {
 	type Test struct {
 		ctx                context.Context
-		tx                 GlobalTransaction
+		tx                 tm.GlobalTransaction
 		ok                 bool
 		wantHasMock        bool
 		wantMockTargetName string
@@ -224,8 +233,8 @@ func TestCommitOrRollback(t *testing.T) {
 	gts := []Test{
 		{
 			ctx: context.Background(),
-			tx: GlobalTransaction{
-				TxRole: UnKnow,
+			tx: tm.GlobalTransaction{
+				TxRole: tm.UnKnow,
 			},
 			wantHasError:    true,
 			wantErrorString: "global transaction role is UnKnow.",
@@ -233,26 +242,26 @@ func TestCommitOrRollback(t *testing.T) {
 		//ok with nil
 		{
 			ctx: context.Background(),
-			tx: GlobalTransaction{
-				TxRole: Launcher,
+			tx: tm.GlobalTransaction{
+				TxRole: tm.Launcher,
 			},
 			ok:                 true,
 			wantHasMock:        true,
 			wantMockTargetName: "Commit",
-			wantMockFunction: func(_ *GlobalTransactionManager, ctx context.Context, gtr *GlobalTransaction) error {
+			wantMockFunction: func(_ *getty.GettyGlobalTransactionManager, ctx context.Context, gtr *tm.GlobalTransaction) error {
 				return nil
 			},
 		},
 		//ok with error
 		{
 			ctx: context.Background(),
-			tx: GlobalTransaction{
-				TxRole: Launcher,
+			tx: tm.GlobalTransaction{
+				TxRole: tm.Launcher,
 			},
 			ok:                 true,
 			wantHasMock:        true,
 			wantMockTargetName: "Commit",
-			wantMockFunction: func(_ *GlobalTransactionManager, ctx context.Context, gtr *GlobalTransaction) error {
+			wantMockFunction: func(_ *getty.GettyGlobalTransactionManager, ctx context.Context, gtr *tm.GlobalTransaction) error {
 				return errors.New("Mock error")
 			},
 			wantHasError:    true,
@@ -261,26 +270,26 @@ func TestCommitOrRollback(t *testing.T) {
 		// false with nil
 		{
 			ctx: context.Background(),
-			tx: GlobalTransaction{
-				TxRole: Launcher,
+			tx: tm.GlobalTransaction{
+				TxRole: tm.Launcher,
 			},
 			ok:                 false,
 			wantHasMock:        true,
 			wantMockTargetName: "Rollback",
-			wantMockFunction: func(_ *GlobalTransactionManager, ctx context.Context, gtr *GlobalTransaction) error {
+			wantMockFunction: func(_ *getty.GettyGlobalTransactionManager, ctx context.Context, gtr *tm.GlobalTransaction) error {
 				return nil
 			},
 		},
 		// false with error
 		{
 			ctx: context.Background(),
-			tx: GlobalTransaction{
-				TxRole: Launcher,
+			tx: tm.GlobalTransaction{
+				TxRole: tm.Launcher,
 			},
 			ok:                 false,
 			wantHasMock:        true,
 			wantMockTargetName: "Rollback",
-			wantMockFunction: func(_ *GlobalTransactionManager, ctx context.Context, gtr *GlobalTransaction) error {
+			wantMockFunction: func(_ *getty.GettyGlobalTransactionManager, ctx context.Context, gtr *tm.GlobalTransaction) error {
 				return errors.New("Mock error")
 			},
 			wantHasError:    true,
@@ -288,22 +297,22 @@ func TestCommitOrRollback(t *testing.T) {
 		},
 		{
 			ctx: context.Background(),
-			tx: GlobalTransaction{
-				TxRole: Participant,
+			tx: tm.GlobalTransaction{
+				TxRole: tm.Participant,
 			},
 		},
 	}
 
 	for i, v := range gts {
 		t.Logf("Case %v: %+v", i, v)
-		v.ctx = InitSeataContext(v.ctx)
-		SetTx(v.ctx, &v.tx)
+		v.ctx = tm.InitSeataContext(v.ctx)
+		tm.SetTx(v.ctx, &v.tx)
 		var stub *gomonkey.Patches
 		if v.wantHasMock {
-			stub = gomonkey.ApplyMethod(reflect.TypeOf(GetGlobalTransactionManager()), v.wantMockTargetName, v.wantMockFunction)
+			stub = gomonkey.ApplyMethod(reflect.TypeOf(tm.GetGlobalTransactionManager()), v.wantMockTargetName, v.wantMockFunction)
 		}
 
-		err := commitOrRollback(v.ctx, v.ok)
+		err := tm.CommitOrRollback(v.ctx, v.ok)
 
 		if v.wantHasError {
 			assert.Equal(t, v.wantErrorString, err.Error())
@@ -318,55 +327,55 @@ func TestCommitOrRollback(t *testing.T) {
 }
 
 func TestClearTxConf(t *testing.T) {
-	ctx := InitSeataContext(context.Background())
+	ctx := tm.InitSeataContext(context.Background())
 
-	SetTx(ctx, &GlobalTransaction{
+	tm.SetTx(ctx, &tm.GlobalTransaction{
 		Xid:      "123456",
 		TxName:   "MockTxName",
 		TxStatus: message.GlobalStatusBegin,
-		TxRole:   Launcher,
+		TxRole:   tm.Launcher,
 	})
 
-	clearTxConf(ctx)
+	tm.ClearTxConf(ctx)
 
-	assert.Equal(t, "123456", GetXID(ctx))
-	assert.Equal(t, UnKnow, *GetTxRole(ctx))
-	assert.Equal(t, message.GlobalStatusUnKnown, *GetTxStatus(ctx))
-	assert.Equal(t, "", GetTxName(ctx))
+	assert.Equal(t, "123456", tm.GetXID(ctx))
+	assert.Equal(t, tm.UnKnow, *tm.GetTxRole(ctx))
+	assert.Equal(t, message.GlobalStatusUnKnown, *tm.GetTxStatus(ctx))
+	assert.Equal(t, "", tm.GetTxName(ctx))
 }
 
 func TestUseExistGtx(t *testing.T) {
-	ctx := InitSeataContext(context.Background())
-	SetXID(ctx, "123456")
-	useExistGtx(ctx, &GtxConfig{
+	ctx := tm.InitSeataContext(context.Background())
+	tm.SetXID(ctx, "123456")
+	tm.UseExistGtx(ctx, &tm.GtxConfig{
 		Name: "useExistGtxMock",
 	})
-	assert.Equal(t, Participant, *GetTxRole(ctx))
-	assert.Equal(t, message.GlobalStatusBegin, *GetTxStatus(ctx))
+	assert.Equal(t, tm.Participant, *tm.GetTxRole(ctx))
+	assert.Equal(t, message.GlobalStatusBegin, *tm.GetTxStatus(ctx))
 }
 
 func TestBeginNewGtx(t *testing.T) {
-	ctx := InitSeataContext(context.Background())
-	g := &GtxConfig{
+	ctx := tm.InitSeataContext(context.Background())
+	g := &tm.GtxConfig{
 		Name: "beginNewGtxMock",
 	}
 	// case return nil
-	gomonkey.ApplyMethod(reflect.TypeOf(GetGlobalTransactionManager()), "Begin",
-		func(_ *GlobalTransactionManager, ctx context.Context, timeout time.Duration) error {
+	gomonkey.ApplyMethod(reflect.TypeOf(tm.GetGlobalTransactionManager()), "Begin",
+		func(_ *getty.GettyGlobalTransactionManager, ctx context.Context, timeout time.Duration) error {
 			return nil
 		})
-	assert.Nil(t, beginNewGtx(ctx, g))
-	assert.Equal(t, Launcher, *GetTxRole(ctx))
-	assert.Equal(t, g.Name, GetTxName(ctx))
-	assert.Equal(t, message.GlobalStatusBegin, *GetTxStatus(ctx))
+	assert.Nil(t, tm.BeginNewGtx(ctx, g))
+	assert.Equal(t, tm.Launcher, *tm.GetTxRole(ctx))
+	assert.Equal(t, g.Name, tm.GetTxName(ctx))
+	assert.Equal(t, message.GlobalStatusBegin, *tm.GetTxStatus(ctx))
 
 	// case return error
 	err := errors.New("Mock Error")
-	gomonkey.ApplyMethod(reflect.TypeOf(GetGlobalTransactionManager()), "Begin",
-		func(_ *GlobalTransactionManager, ctx context.Context, timeout time.Duration) error {
+	gomonkey.ApplyMethod(reflect.TypeOf(tm.GetGlobalTransactionManager()), "Begin",
+		func(_ *getty.GettyGlobalTransactionManager, ctx context.Context, timeout time.Duration) error {
 			return err
 		})
-	assert.Error(t, beginNewGtx(ctx, g))
+	assert.Error(t, tm.BeginNewGtx(ctx, g))
 }
 
 func TestWithGlobalTx(t *testing.T) {
@@ -378,7 +387,7 @@ func TestWithGlobalTx(t *testing.T) {
 	}
 
 	type testCase struct {
-		GtxConfig             *GtxConfig
+		gtxConfig             *tm.GtxConfig
 		occurError            bool
 		errMessage            string
 		callbackErr           bool
@@ -387,18 +396,18 @@ func TestWithGlobalTx(t *testing.T) {
 		mockSecondPhaseFunc   interface{}
 		mockSecondPhaseTarget interface{}
 		secondErr             bool
-		callback              CallbackWithCtx
+		callback              tm.CallbackWithCtx
 	}
 
 	gts := []testCase{
 		// case TxName is nil
 		{
-			GtxConfig:  &GtxConfig{},
+			gtxConfig:  &tm.GtxConfig{},
 			occurError: true,
 			errMessage: "global transaction name is required.",
 		},
 
-		// case GtxConfig is nil
+		// case tm.GtxConfig is nil
 		{
 			occurError: true,
 			errMessage: "global transaction config info is required.",
@@ -406,42 +415,42 @@ func TestWithGlobalTx(t *testing.T) {
 
 		// case mock begin return error
 		{
-			GtxConfig: &GtxConfig{
-				Name: "MockGtxConfig",
+			gtxConfig: &tm.GtxConfig{
+				Name: "Mocktm.GtxConfig",
 			},
 			occurError:      true,
 			errMessage:      "mock begin",
-			mockBeginTarget: begin,
-			mockBeginFunc: func(ctx context.Context, gc *GtxConfig) error {
+			mockBeginTarget: tm.Begin,
+			mockBeginFunc: func(ctx context.Context, gc *tm.GtxConfig) error {
 				return errors.New("mock begin")
 			},
 		},
 
 		// case callback return error
 		{
-			GtxConfig: &GtxConfig{
-				Name: "MockGtxConfig",
+			gtxConfig: &tm.GtxConfig{
+				Name: "Mocktm.GtxConfig",
 			},
 			callbackErr:     true,
 			callback:        callbackError,
-			mockBeginTarget: begin,
-			mockBeginFunc: func(ctx context.Context, gc *GtxConfig) error {
+			mockBeginTarget: tm.Begin,
+			mockBeginFunc: func(ctx context.Context, gc *tm.GtxConfig) error {
 				return nil
 			},
 		},
 
 		// case callback return nil
 		{
-			GtxConfig: &GtxConfig{
-				Name: "MockGtxConfig",
+			gtxConfig: &tm.GtxConfig{
+				Name: "Mocktm.GtxConfig",
 			},
-			mockBeginTarget: begin,
-			mockBeginFunc: func(ctx context.Context, gc *GtxConfig) error {
-				SetXID(ctx, "123456")
+			mockBeginTarget: tm.Begin,
+			mockBeginFunc: func(ctx context.Context, gc *tm.GtxConfig) error {
+				tm.SetXID(ctx, "123456")
 				return nil
 			},
 			callback:              callbackNil,
-			mockSecondPhaseTarget: commitOrRollback,
+			mockSecondPhaseTarget: tm.CommitOrRollback,
 			mockSecondPhaseFunc: func(ctx context.Context, s bool) error {
 				return nil
 			},
@@ -449,16 +458,16 @@ func TestWithGlobalTx(t *testing.T) {
 
 		// case second mock error
 		{
-			GtxConfig: &GtxConfig{
-				Name: "MockGtxConfig",
+			gtxConfig: &tm.GtxConfig{
+				Name: "Mocktm.GtxConfig",
 			},
-			mockBeginTarget: begin,
-			mockBeginFunc: func(ctx context.Context, gc *GtxConfig) error {
-				SetXID(ctx, "123456")
+			mockBeginTarget: tm.Begin,
+			mockBeginFunc: func(ctx context.Context, gc *tm.GtxConfig) error {
+				tm.SetXID(ctx, "123456")
 				return nil
 			},
 			callback:              callbackNil,
-			mockSecondPhaseTarget: commitOrRollback,
+			mockSecondPhaseTarget: tm.CommitOrRollback,
 			mockSecondPhaseFunc: func(ctx context.Context, s bool) error {
 				return errors.New("second error mock")
 			},
@@ -478,7 +487,7 @@ func TestWithGlobalTx(t *testing.T) {
 		}
 
 		ctx := context.Background()
-		err := WithGlobalTx(ctx, v.GtxConfig, v.callback)
+		err := tm.WithGlobalTx(ctx, v.gtxConfig, v.callback)
 
 		if v.occurError {
 			assert.Equal(t, v.errMessage, err.Error())
