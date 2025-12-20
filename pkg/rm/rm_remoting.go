@@ -56,7 +56,7 @@ func (r *RMRemoting) BranchRegister(param BranchRegisterParam) (int64, error) {
 		ApplicationData: []byte(param.ApplicationData),
 	}
 	resp, err := getty.GetGettyRemotingClient().SendSyncRequest(request)
-	if err != nil || resp == nil {
+	if err != nil {
 		log.Errorf("BranchRegister error: %v, res %v", err.Error(), resp)
 		return 0, err
 	}
@@ -133,7 +133,7 @@ func (r *RMRemoting) RegisterResource(resource Resource) error {
 	if isRegisterSuccess(res) {
 		r.onRegisterRMSuccess(res.(message.RegisterRMResponse))
 	} else {
-		r.onRegisterRMFailure(res.(message.RegisterRMResponse))
+		r.onRegisterRMFailure(res)
 	}
 
 	return nil
@@ -169,7 +169,7 @@ func (r *RMRemoting) onRegisterRMSuccess(response message.RegisterRMResponse) {
 	log.Infof("register RM success. response: %#v", response)
 }
 
-func (r *RMRemoting) onRegisterRMFailure(response message.RegisterRMResponse) {
+func (r *RMRemoting) onRegisterRMFailure(response interface{}) {
 	log.Infof("register RM failure. response: %#v", response)
 }
 

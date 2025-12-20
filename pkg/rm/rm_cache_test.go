@@ -41,5 +41,8 @@ func TestGetRmCacheInstance(t *testing.T) {
 		GetRmCacheInstance().RegisterResourceManager(mockResourceManager)
 		actual := GetRmCacheInstance().GetResourceManager(branch.BranchTypeTCC)
 		assert.Equalf(t, mockResourceManager, actual, "GetRmCacheInstance()")
+		assert.Panicsf(t, func() {
+			GetRmCacheInstance().GetResourceManager(branch.BranchTypeAT)
+		}, "GetRmCacheInstance()")
 	})
 }

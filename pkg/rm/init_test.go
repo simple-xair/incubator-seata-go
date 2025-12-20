@@ -218,3 +218,20 @@ func TestGlobalRmConfigVariable(t *testing.T) {
 		assert.True(t, true, "Global rmConfig starts as zero value")
 	}
 }
+
+func TestGetRmAppAndGroup(t *testing.T) {
+	originalConfig := rmConfig
+	defer func() {
+		rmConfig = originalConfig
+	}()
+
+	testConfig := RmConfig{
+		ApplicationID:  "test-app",
+		TxServiceGroup: "test-service-group",
+	}
+
+	InitRm(testConfig)
+	appID, group := GetRmAppAndGroup()
+	assert.Equal(t, "test-app", appID)
+	assert.Equal(t, "test-service-group", group)
+}

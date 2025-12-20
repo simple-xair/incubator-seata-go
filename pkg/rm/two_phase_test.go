@@ -20,6 +20,7 @@ package rm
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -288,21 +289,270 @@ func TestParseTwoPhaseActionByInterface(t *testing.T) {
 	}
 
 	userProvider := &UserProvider{}
-	twoPhaseAction, _ := ParseTwoPhaseAction(userProvider)
+	validAction, _ := ParseTwoPhaseAction(userProvider)
+
+	var notStruct int = 10
+
+	tests := []struct {
+		name       string
+		args       args
+		want       *TwoPhaseAction
+		wantErr    bool
+		wantErrMsg string
+	}{
+		{
+			name:    "success_struct",
+			args:    args{v: userProvider},
+			want:    validAction,
+			wantErr: false,
+		},
+		{
+			name:       "error_not_struct",
+			args:       args{v: &notStruct},
+			want:       nil,
+			wantErr:    true,
+			wantErrMsg: "param should be a struct, instead of a pointer",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseTwoPhaseActionByInterface(tt.args.v)
+
+			if tt.wantErr {
+				assert.Nil(t, got)
+				assert.Error(t, err)
+				assert.Equal(t, tt.wantErrMsg, err.Error())
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestGetActionsMethodNames(t *testing.T) {
+	type args struct {
+		v interface{}
+	}
+
+	userProvider := NewTwoPhaseDemoService1()
 	args1 := args{v: userProvider}
 
 	tests := struct {
 		name    string
 		args    args
-		want    *TwoPhaseAction
 		wantErr assert.ErrorAssertionFunc
-	}{"test1", args1, twoPhaseAction, assert.NoError}
+	}{
+		"test1",
+		args1,
+		assert.NoError,
+	}
 
 	t.Run(tests.name, func(t *testing.T) {
-		got, err := ParseTwoPhaseActionByInterface(tests.args.v)
-		if !tests.wantErr(t, err, fmt.Sprintf("ParseTwoPhaseActionByInterface(%v)", tests.args.v)) {
+		got, err := ParseTwoPhaseAction(tests.args.v)
+		if !tests.wantErr(t, err) {
 			return
 		}
-		assert.Equalf(t, tests.want, got, "ParseTwoPhaseActionByInterface(%v)", tests.args.v)
+
+		assert.Equal(t, "TwoPhasePrepare", got.GetPrepareMethodName())
+		assert.Equal(t, "TwoPhaseCommit", got.GetCommitMethodName())
+		assert.Equal(t, "TwoPhaseRollback", got.GetRollbackMethodName())
 	})
+}
+
+func TestGetPrepareAction(t *testing.T) {
+	type testStruct struct {
+		NotFunc        string
+		WrongReturn0   func(ctx context.Context, params interface{}) (string, error) `seataTwoPhaseAction:"prepare"`
+		WrongReturn1   func(ctx context.Context, params interface{}) (bool, string)  `seataTwoPhaseAction:"prepare"`
+		NoParams       func() (bool, error)                                          `seataTwoPhaseAction:"prepare"`
+		WrongNumOut    func(ctx context.Context) bool                                `seataTwoPhaseAction:"prepare"`
+		WrongFirstType func(ctx string, params interface{}) (bool, error)            `seataTwoPhaseAction:"prepare"`
+		ValidPrepare   func(ctx context.Context, params interface{}) (bool, error)   `seataTwoPhaseAction:"prepare"`
+	}
+
+	val := reflect.ValueOf(&testStruct{}).Elem()
+	typ := val.Type()
+	invalidValue := reflect.Value{}
+
+	getFields := func(name string) reflect.StructField {
+		field, _ := typ.FieldByName(name)
+		return field
+	}
+
+	tests := []struct {
+		name   string
+		field  reflect.StructField
+		value  reflect.Value
+		wantOk bool
+	}{
+		{"notFunc", getFields("NotFunc"), val.FieldByName("NotFunc"), false},
+		{"wrongReturn0", getFields("WrongReturn0"), val.FieldByName("WrongReturn0"), false},
+		{"wrongReturn1", getFields("WrongReturn1"), val.FieldByName("WrongReturn1"), false},
+		{"noParams", getFields("NoParams"), val.FieldByName("NoParams"), false},
+		{"wrongNumOut", getFields("WrongNumOut"), val.FieldByName("WrongNumOut"), false},
+		{"wrongFirstType", getFields("WrongFirstType"), val.FieldByName("WrongFirstType"), false},
+		{"validPrepare", getFields("ValidPrepare"), val.FieldByName("ValidPrepare"), true},
+		{"invalidValue", getFields("ValidPrepare"), invalidValue, false}, // !f.IsValid()
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name, _, ok := getPrepareAction(tt.field, tt.value)
+			if tt.wantOk {
+				assert.True(t, ok)
+				assert.Equal(t, tt.field.Name, name)
+			} else {
+				assert.False(t, ok)
+			}
+		})
+	}
+}
+
+func TestGetCommitMethod(t *testing.T) {
+	type testStruct struct {
+		NotFunc        string
+		WrongReturn0   func(ctx context.Context, bac *tm.BusinessActionContext) (string, error) `seataTwoPhaseAction:"commit"`
+		WrongReturn1   func(ctx context.Context, bac *tm.BusinessActionContext) (bool, string)  `seataTwoPhaseAction:"commit"`
+		NoParams       func() (bool, error)                                                     `seataTwoPhaseAction:"commit"`
+		WrongNumOut    func(ctx context.Context) bool                                           `seataTwoPhaseAction:"commit"`
+		WrongFirstType func(ctx string, bac *tm.BusinessActionContext) (bool, error)            `seataTwoPhaseAction:"commit"`
+		ValidCommit    func(ctx context.Context, bac *tm.BusinessActionContext) (bool, error)   `seataTwoPhaseAction:"commit"`
+	}
+
+	val := reflect.ValueOf(&testStruct{}).Elem()
+	typ := val.Type()
+	invalidValue := reflect.Value{}
+
+	getFields := func(name string) reflect.StructField {
+		field, _ := typ.FieldByName(name)
+		return field
+	}
+
+	tests := []struct {
+		name   string
+		field  reflect.StructField
+		value  reflect.Value
+		wantOk bool
+	}{
+		{"notFunc", getFields("NotFunc"), val.FieldByName("NotFunc"), false},
+		{"wrongReturn0", getFields("WrongReturn0"), val.FieldByName("WrongReturn0"), false},
+		{"wrongReturn1", getFields("WrongReturn1"), val.FieldByName("WrongReturn1"), false},
+		{"noParams", getFields("NoParams"), val.FieldByName("NoParams"), false},
+		{"wrongNumOut", getFields("WrongNumOut"), val.FieldByName("WrongNumOut"), false},
+		{"wrongFirstType", getFields("WrongFirstType"), val.FieldByName("WrongFirstType"), false},
+		{"validCommit", getFields("ValidCommit"), val.FieldByName("ValidCommit"), true},
+		{"invalidValue", getFields("ValidCommit"), invalidValue, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name, _, ok := getCommitMethod(tt.field, tt.value)
+			if tt.wantOk {
+				assert.True(t, ok)
+				assert.Equal(t, tt.field.Name, name)
+			} else {
+				assert.False(t, ok)
+			}
+		})
+	}
+}
+
+func TestGetRollbackMethod(t *testing.T) {
+	type testStruct struct {
+		NotFunc        string
+		WrongReturn0   func(ctx context.Context, bac *tm.BusinessActionContext) (string, error) `seataTwoPhaseAction:"rollback"`
+		WrongReturn1   func(ctx context.Context, bac *tm.BusinessActionContext) (bool, string)  `seataTwoPhaseAction:"rollback"`
+		NoParams       func() (bool, error)                                                     `seataTwoPhaseAction:"rollback"`
+		WrongNumOut    func(ctx context.Context) bool                                           `seataTwoPhaseAction:"rollback"`
+		WrongFirstType func(ctx string, bac *tm.BusinessActionContext) (bool, error)            `seataTwoPhaseAction:"rollback"`
+		ValidRollback  func(ctx context.Context, bac *tm.BusinessActionContext) (bool, error)   `seataTwoPhaseAction:"rollback"`
+	}
+
+	val := reflect.ValueOf(&testStruct{}).Elem()
+	typ := val.Type()
+	invalidValue := reflect.Value{}
+
+	getFields := func(name string) reflect.StructField {
+		field, _ := typ.FieldByName(name)
+		return field
+	}
+
+	tests := []struct {
+		name   string
+		field  reflect.StructField
+		value  reflect.Value
+		wantOk bool
+	}{
+		{"notFunc", getFields("NotFunc"), val.FieldByName("NotFunc"), false},
+		{"wrongReturn0", getFields("WrongReturn0"), val.FieldByName("WrongReturn0"), false},
+		{"wrongReturn1", getFields("WrongReturn1"), val.FieldByName("WrongReturn1"), false},
+		{"wrongNumOut", getFields("WrongNumOut"), val.FieldByName("WrongNumOut"), false},
+		{"noParams", getFields("NoParams"), val.FieldByName("NoParams"), false},
+		{"wrongFirstType", getFields("WrongFirstType"), val.FieldByName("WrongFirstType"), false},
+		{"validRollback", getFields("ValidRollback"), val.FieldByName("ValidRollback"), true},
+		{"invalidValue", getFields("ValidRollback"), invalidValue, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name, _, ok := getRollbackMethod(tt.field, tt.value)
+			if tt.wantOk {
+				assert.True(t, ok)
+				assert.Equal(t, tt.field.Name, name)
+			} else {
+				assert.False(t, ok)
+			}
+		})
+	}
+}
+
+func TestGetActionName(t *testing.T) {
+	type WithTag struct {
+		Field1 int `seataTwoPhaseServiceName:"MyAction"`
+		Field2 int
+	}
+
+	type WithoutTag struct {
+		Field1 int
+		Field2 int
+	}
+
+	type EmptyStruct struct{}
+
+	tests := []struct {
+		name string
+		arg  interface{}
+		want string
+	}{
+		{
+			name: "struct with tag",
+			arg:  &WithTag{},
+			want: "MyAction",
+		},
+		{
+			name: "struct without tag",
+			arg:  &WithoutTag{},
+			want: "",
+		},
+		{
+			name: "empty struct pointer",
+			arg:  &EmptyStruct{},
+			want: "",
+		},
+		{
+			name: "non-struct pointer",
+			arg:  new(int),
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getActionName(tt.arg)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
